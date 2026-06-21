@@ -13,47 +13,48 @@ st.title("TradeIQ System")
 
 with st.expander("View Algorithm Logic"):
     st.markdown("""
-    **Trend-Following and Momentum Algorithm**
+    **True Alpha Institutional Algorithm**
     
-    Our system evaluates stocks using a strict mathematical algorithm:
+    Our system evaluates stocks using a multi-layered quantitative approach:
     
-    **1. Trend Identification (Dual EMA)**
-    - **EMA20 > EMA50:** Confirms a bullish uptrend.
-    - **EMA20 < EMA50:** Confirms a bearish downtrend.
+    **1. Broader Market Context (Nifty 50)**
+    - Verifies the overall trend of the market using EMA. If the market is Bearish, the system becomes defensive and holds back aggressive buys.
     
-    **2. Momentum Confirmation (RSI)**
-    - **RSI < 40:** Indicates the stock is mathematically 'oversold' and has room to rise before becoming too expensive.
+    **2. Regime Detection (ADX)**
+    - Differentiates between 'Trending' and 'Sideways' markets. Applies Trend-Following (EMA) in trending markets and Mean-Reversion (RSI) in sideways markets.
     
-    **3. Final Signal Rules**
-    - **BUY:** Triggered ONLY if (EMA20 > EMA50) AND (RSI < 40).
-    - **SELL:** Triggered if (EMA20 < EMA50), meaning the trend is broken.
-    - **HOLD:** If neither condition is met, the system strictly advises waiting.
+    **3. Machine Learning (XGBoost)**
+    - Generates a Probabilistic 'Win Rate' based on historical z-scores, velocity, acceleration, and OBV using Walk-Forward Validation. Focus on trades with >60% Win Probability.
+    
+    **4. Dynamic Risk & Kelly Sizing**
+    - Calculates custom Target (3.0x) and Stoploss (1.5x) based on the stock's actual Volatility (ATR).
+    - Allocates optimal capital per trade using the mathematical Kelly Criterion.
     """)
 
 with st.sidebar:
     st.header("TradeIQ Philosophy")
     st.markdown("""
     **Our Core Edge:**
-    - **Emotionless Trading:** Eliminates FOMO and panic. Trades are generated purely on mathematical signals (EMA + RSI).
-    - **Time Efficiency:** Scans 50 top market stocks instantly, replacing manual chart checking.
-    - **Risk Management:** Auto-calculates exact mathematical Stoploss (-2%) and Target (+4%).
+    - **Machine Learning Edge:** Trades are filtered by XGBoost Probability scores, eliminating standard indicator noise.
+    - **Dynamic Risk Management:** Auto-calculates precise Stoploss and Target using the stock's daily ATR (Average True Range).
+    - **Kelly Position Sizing:** Tells you exactly how many shares to buy to maximize compounding without ruining your portfolio.
 
-    **Zerodha Daily Trading Workflow:**
+    **Daily Trading Workflow:**
     
     **Step 1: The 3:15 PM Scan**
     At 3:15 PM (near market close), open the 'Multi-Stock Live Scanner' tab and click 'Scan Market'.
     
     **Step 2: Pick the Best Setup**
-    Look at the results table. Focus on stocks that have a 'BUY' signal and a 'High' confidence rating.
+    Look at the results table. Focus on stocks that have an 'XGBoost Signal' of BUY and a high 'XGB Prob' (e.g. > 60%).
     
-    **Step 3: Execute the Trade**
-    Open your Zerodha Kite app. Search for the selected stock and place a BUY order (CNC for positional) at the current market price.
+    **Step 3: Check Sizing & Execute**
+    Go to 'Single Stock Analysis' for your chosen stock to see exactly how many shares to buy based on Kelly sizing. Place a CNC/Delivery order at the current market price.
     
     **Step 4: The GTT Safety Net**
-    Once the buy order is complete, go to your Zerodha portfolio and select 'Create GTT'. Choose the 'OCO' (One Cancels Other) option.
+    Once the buy order is complete, go to your broker portfolio and create an 'OCO' (One Cancels Other) GTT order.
     
     **Step 5: Set Strict Risk Parameters**
-    Use the exact percentages provided by TradeIQ for that stock. Set your Stoploss trigger at -2% and your Target trigger at +4%. You are now protected automatically.
+    Use the exact Stoploss % and Target % provided by the dashboard for that specific stock. Do not use generic 2% stoplosses. You are now protected mathematically.
     """)
 
 tab1, tab2, tab3 = st.tabs(["Single Stock Analysis", "Multi-Stock Live Scanner", "Backtest & Strategy Compare"])
