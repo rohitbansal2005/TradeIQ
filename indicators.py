@@ -1,8 +1,9 @@
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, ADXIndicator
-from ta.volatility import AverageTrueRange
-from ta.volume import OnBalanceVolumeIndicator
+from ta.volatility import AverageTrueRange, BollingerBands
+from ta.volume import OnBalanceVolumeIndicator, MFIIndicator
+from fast_indicators import get_fast_ema
 
 def add_indicators(df):
     """Add EMA, RSI, MACD, ATR, ADX, and Advanced Statistical ML features."""
@@ -17,9 +18,9 @@ def add_indicators(df):
         low_col = df['Low']
         volume_col = df['Volume']
         
-    # EMAs
-    df['EMA20'] = close_col.ewm(span=20, adjust=False).mean()
-    df['EMA50'] = close_col.ewm(span=50, adjust=False).mean()
+    # EMAs via C++
+    df['EMA20'] = get_fast_ema(close_col, window=20)
+    df['EMA50'] = get_fast_ema(close_col, window=50)
     
     # RSI
     df['RSI'] = RSIIndicator(close_col, window=14).rsi()
@@ -60,6 +61,35 @@ def add_indicators(df):
     df['OBV'] = obv.on_balance_volume()
     # Normalize OBV for ML (percentage change)
     df['OBV_Pct'] = df['OBV'].pct_change()
+    
+    # --- New Ravi Mama Indicators ---
+    # MFI (Money Flow Index)
+    mfi = MFIIndicator(high=high_col, low=low_col, close=close_col, volume=volume_col, window=14)
+    df['MFI'] = mfi.money_flow_index()
+    
+    # SMI (Stochastic Momentum Index)
+    k_length = 10
+    d_length = 3
+    ll = low_col.rolling(window=k_length).min()
+    hh = high_col.rolling(window=k_length).max()
+    center = (hh + ll) / 2
+    diff = close_col - center
+    
+    ema1 = diff.ewm(span=d_length, adjust=False).mean()
+    ema2 = ema1.ewm(span=d_length, adjust=False).mean()
+    
+    hl_diff = hh - ll
+    hl_ema1 = hl_diff.ewm(span=d_length, adjust=False).mean()
+    hl_ema2 = hl_ema1.ewm(span=d_length, adjust=False).mean()
+    
+    df['SMI'] = 200 * (ema2 / hl_ema2)
+    df['SMI_Signal'] = df['SMI'].ewm(span=d_length, adjust=False).mean()
+    
+    # Coil Pattern (Bollinger Band Width Squeeze)
+    bb = BollingerBands(close=close_col, window=20, window_dev=2)
+    df['BBW'] = bb.bollinger_wband()
+    # Coil Squeeze is 1 if current BBW is the lowest in the last 20 days
+    df['Coil_Squeeze'] = (df['BBW'] <= df['BBW'].rolling(window=20).min()).astype(int)
     
     return df
 

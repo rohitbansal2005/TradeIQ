@@ -44,6 +44,30 @@ def get_regime_signal(df, market_context="Neutral"):
         
     return signals
 
+def get_coil_strategy_signal(df, market_context="Neutral"):
+    """
+    Coil Pattern Strategy with MFI and SMI.
+    Targeting 70% efficiency when combined with XGBoost.
+    """
+    signals = pd.Series("HOLD", index=df.index)
+    
+    coil_active = df['Coil_Squeeze'] == 1
+    mfi_bullish = (df['MFI'] > 40) & (df['MFI'] > df['MFI'].shift(1))
+    smi_bullish = (df['SMI'] > df['SMI_Signal']) & (df['SMI'] > df['SMI'].shift(1))
+    
+    buy_condition = coil_active & mfi_bullish & smi_bullish
+    
+    # Sell when momentum dies
+    sell_condition = (df['SMI'] < df['SMI_Signal']) & (df['MFI'] < 50)
+    
+    signals.loc[buy_condition] = "BUY"
+    signals.loc[sell_condition] = "SELL"
+    
+    if market_context == "Bearish":
+        signals.loc[signals == "BUY"] = "HOLD"
+        
+    return signals
+
 def get_signal(df):
     return get_regime_signal(df).iloc[-1]
 

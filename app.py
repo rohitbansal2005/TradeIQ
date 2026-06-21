@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from data import fetch_data, fetch_multiple_stocks, TOP_STOCKS, get_market_context
+from data import fetch_data, fetch_multiple_stocks, TOP_STOCKS, get_market_context, MARKET_UNIVERSES, get_nifty_500_live
 from indicators import add_indicators
-from strategy import get_signal, get_risk_params, get_ema_rsi_signal, get_macd_signal, calculate_position_size, calculate_dynamic_risk, get_regime_signal
+from strategy import get_signal, get_risk_params, get_ema_rsi_signal, get_macd_signal, calculate_position_size, calculate_dynamic_risk, get_regime_signal, get_coil_strategy_signal
 from backtest import run_backtest
 from ml_model import train_and_predict_ml
 import yfinance as yf
@@ -62,11 +62,18 @@ tab1, tab2, tab3 = st.tabs(["Single Stock Analysis", "Multi-Stock Live Scanner",
 with tab1:
     st.header("Single Stock Analysis")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        stock_dropdown = st.selectbox("Select a Top Stock", TOP_STOCKS, index=1)
-    with col2:
-        custom_stock = st.text_input("Or Enter Custom Ticker", placeholder="e.g. ZOMATO.NS")
+    universe_options = list(MARKET_UNIVERSES.keys()) + ["Nifty 500 (Official Full NSE)"]
+    
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        selected_universe_t1 = st.selectbox("Select Market Universe", universe_options, index=0, key="univ_t1")
+    
+    current_list_t1 = get_nifty_500_live() if selected_universe_t1 == "Nifty 500 (Official Full NSE)" else MARKET_UNIVERSES[selected_universe_t1]
+    
+    with col_u2:
+        stock_dropdown = st.selectbox("Select a Top Stock", current_list_t1, index=0)
+        
+    custom_stock = st.text_input("Or Enter Custom Ticker", placeholder="e.g. ZOMATO.NS")
         
     market_context = get_market_context()
     st.info(f"📈 **Broader Market Context (Nifty 50):** {market_context}")
@@ -133,46 +140,59 @@ with tab1:
 with tab2:
     st.header("Multi-Stock Live Scanner (Nifty 50)")
     st.write("Scan the top Indian stocks instantly to find live trading opportunities.")
+    universe_options_t2 = list(MARKET_UNIVERSES.keys()) + ["Nifty 500 (Official Full NSE)"]
+    selected_universe_t2 = st.selectbox("Select Market Universe to Scan", universe_options_t2, index=0, key="univ_t2")
     
     if st.button("Scan Market 🚀"):
-        with st.spinner("Fetching live data for all top stocks... this may take a moment."):
+        with st.spinner("Fetching live data for all selected stocks... this may take a moment."):
             try:
+                current_list_t2 = get_nifty_500_live() if selected_universe_t2 == "Nifty 500 (Official Full NSE)" else MARKET_UNIVERSES[selected_universe_t2]
                 # Fetch multi-stocks
-                stock_data = fetch_multiple_stocks(TOP_STOCKS, period="2y", interval="1d")
+                stock_data = fetch_multiple_stocks(current_list_t2, period="2y", interval="1d")
                 
                 market_context = get_market_context()
                 results = []
                 
-                for ticker, df in stock_data.items():
-                    if len(df) > 50: # Need enough data for EMA50
-                        try:
-                            df = add_indicators(df)
-                            signal = get_regime_signal(df, market_context).iloc[-1]
-                            _, ml_latest_signal, ml_prob = train_and_predict_ml(df, live_only=True)
+                import concurrent.futures
+                
+                def process_stock(ticker, df, market_context):
+                    if len(df) <= 50:
+                        return None
+                    try:
+                        df = add_indicators(df)
+                        signal = get_regime_signal(df, market_context).iloc[-1]
+                        _, ml_latest_signal, ml_prob = train_and_predict_ml(df, live_only=True)
+                        
+                        current_atr = df['ATR'].iloc[-1]
+                        current_adx = df['ADX'].iloc[-1]
+                        
+                        if isinstance(df.columns, pd.MultiIndex):
+                            current_price = df['Close'].iloc[-1, 0]
+                        else:
+                            current_price = df['Close'].iloc[-1]
                             
-                            current_atr = df['ATR'].iloc[-1]
-                            current_adx = df['ADX'].iloc[-1]
-                            
-                            if isinstance(df.columns, pd.MultiIndex):
-                                current_price = df['Close'].iloc[-1, 0]
-                            else:
-                                current_price = df['Close'].iloc[-1]
-                                
-                            _, _, sl_pct, target_pct = calculate_dynamic_risk(current_price, current_atr)
-                            
-                            regime = "Trending" if current_adx > 25 else "Sideways"
-                            
-                            results.append({
-                                "Stock": ticker.replace('.NS', ''),
-                                "Regime": regime,
-                                "Regime Signal": signal,
-                                "XGBoost Signal": ml_latest_signal,
-                                "XGB Prob": f"{ml_prob*100:.1f}%",
-                                "Stoploss": f"-{sl_pct:.2f}%",
-                                "Target": f"+{target_pct:.2f}%"
-                            })
-                        except Exception:
-                            continue
+                        _, _, sl_pct, target_pct = calculate_dynamic_risk(current_price, current_atr)
+                        
+                        regime = "Trending" if current_adx > 25 else "Sideways"
+                        
+                        return {
+                            "Stock": ticker.replace('.NS', ''),
+                            "Regime": regime,
+                            "Regime Signal": signal,
+                            "XGBoost Signal": ml_latest_signal,
+                            "XGB Prob": f"{ml_prob*100:.1f}%",
+                            "Stoploss": f"-{sl_pct:.2f}%",
+                            "Target": f"+{target_pct:.2f}%"
+                        }
+                    except Exception:
+                        return None
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                    futures = [executor.submit(process_stock, ticker, df, market_context) for ticker, df in stock_data.items()]
+                    for future in concurrent.futures.as_completed(futures):
+                        res = future.result()
+                        if res is not None:
+                            results.append(res)
                 
                 if results:
                     results_df = pd.DataFrame(results)
@@ -203,9 +223,16 @@ with tab3:
     st.header("Backtest & Strategy Compare")
     st.write("Test multiple strategies over historical data to see their mathematical edge.")
     
-    col_b1, col_b2 = st.columns(2)
+    universe_options_bt = list(MARKET_UNIVERSES.keys()) + ["Nifty 500 (Official Full NSE)"]
+    
+    col_b0, col_b1, col_b2 = st.columns(3)
+    with col_b0:
+        selected_universe_bt = st.selectbox("Market Universe", universe_options_bt, index=0, key="univ_bt")
+        
+    current_list_bt = get_nifty_500_live() if selected_universe_bt == "Nifty 500 (Official Full NSE)" else MARKET_UNIVERSES[selected_universe_bt]
+    
     with col_b1:
-        bt_stock = st.selectbox("Select Stock to Backtest", TOP_STOCKS, index=1, key="bt_stock")
+        bt_stock = st.selectbox("Select Stock to Backtest", current_list_bt, index=0, key="bt_stock")
     with col_b2:
         bt_period = st.selectbox("Historical Period", ["1y", "2y", "5y", "max"], index=1)
         
@@ -224,12 +251,14 @@ with tab3:
                     regime_signals = get_regime_signal(df_bt, market_ctx_bt)
                     ema_signals = get_ema_rsi_signal(df_bt)
                     macd_signals = get_macd_signal(df_bt)
+                    coil_signals = get_coil_strategy_signal(df_bt, market_ctx_bt)
                     ml_signals, _, _ = train_and_predict_ml(df_bt)
                     
                     # Run Backtests
                     regime_metrics, _, regime_equity = run_backtest(df_bt, regime_signals)
                     ema_metrics, _, ema_equity = run_backtest(df_bt, ema_signals)
                     macd_metrics, _, macd_equity = run_backtest(df_bt, macd_signals)
+                    coil_metrics, _, coil_equity = run_backtest(df_bt, coil_signals)
                     ml_metrics, _, ml_equity = run_backtest(df_bt, ml_signals)
                     
                     st.subheader("Equity Curve (Portfolio Balance)")
@@ -243,13 +272,13 @@ with tab3:
                     st.subheader("Strategy Comparison Metrics")
                     
                     comp_data = {
-                        "Strategy": ["Regime+Context (Pro)", "EMA + RSI (Trend)", "MACD (Momentum)", "Machine Learning"],
-                        "Total Trades": [regime_metrics["Total Trades"], ema_metrics["Total Trades"], macd_metrics["Total Trades"], ml_metrics["Total Trades"]],
-                        "Win Rate (%)": [f"{regime_metrics['Win Rate (%)']:.2f}%", f"{ema_metrics['Win Rate (%)']:.2f}%", f"{macd_metrics['Win Rate (%)']:.2f}%", f"{ml_metrics['Win Rate (%)']:.2f}%"],
-                        "Profit Factor": [f"{regime_metrics['Profit Factor']:.2f}", f"{ema_metrics['Profit Factor']:.2f}", f"{macd_metrics['Profit Factor']:.2f}", f"{ml_metrics['Profit Factor']:.2f}"],
-                        "Sharpe Ratio": [f"{regime_metrics['Sharpe Ratio']:.2f}", f"{ema_metrics['Sharpe Ratio']:.2f}", f"{macd_metrics['Sharpe Ratio']:.2f}", f"{ml_metrics['Sharpe Ratio']:.2f}"],
-                        "Total Return (%)": [f"{regime_metrics['Total Return (%)']:.2f}%", f"{ema_metrics['Total Return (%)']:.2f}%", f"{macd_metrics['Total Return (%)']:.2f}%", f"{ml_metrics['Total Return (%)']:.2f}%"],
-                        "Max Drawdown (%)": [f"{regime_metrics['Max Drawdown (%)']:.2f}%", f"{ema_metrics['Max Drawdown (%)']:.2f}%", f"{macd_metrics['Max Drawdown (%)']:.2f}%", f"{ml_metrics['Max Drawdown (%)']:.2f}%"]
+                        "Strategy": ["Regime+Context (Pro)", "EMA + RSI (Trend)", "MACD (Momentum)", "Coil+SMI+MFI (Mama)", "Machine Learning"],
+                        "Total Trades": [regime_metrics["Total Trades"], ema_metrics["Total Trades"], macd_metrics["Total Trades"], coil_metrics["Total Trades"], ml_metrics["Total Trades"]],
+                        "Win Rate (%)": [f"{regime_metrics['Win Rate (%)']:.2f}%", f"{ema_metrics['Win Rate (%)']:.2f}%", f"{macd_metrics['Win Rate (%)']:.2f}%", f"{coil_metrics['Win Rate (%)']:.2f}%", f"{ml_metrics['Win Rate (%)']:.2f}%"],
+                        "Profit Factor": [f"{regime_metrics['Profit Factor']:.2f}", f"{ema_metrics['Profit Factor']:.2f}", f"{macd_metrics['Profit Factor']:.2f}", f"{coil_metrics['Profit Factor']:.2f}", f"{ml_metrics['Profit Factor']:.2f}"],
+                        "Sharpe Ratio": [f"{regime_metrics['Sharpe Ratio']:.2f}", f"{ema_metrics['Sharpe Ratio']:.2f}", f"{macd_metrics['Sharpe Ratio']:.2f}", f"{coil_metrics['Sharpe Ratio']:.2f}", f"{ml_metrics['Sharpe Ratio']:.2f}"],
+                        "Total Return (%)": [f"{regime_metrics['Total Return (%)']:.2f}%", f"{ema_metrics['Total Return (%)']:.2f}%", f"{macd_metrics['Total Return (%)']:.2f}%", f"{coil_metrics['Total Return (%)']:.2f}%", f"{ml_metrics['Total Return (%)']:.2f}%"],
+                        "Max Drawdown (%)": [f"{regime_metrics['Max Drawdown (%)']:.2f}%", f"{ema_metrics['Max Drawdown (%)']:.2f}%", f"{macd_metrics['Max Drawdown (%)']:.2f}%", f"{coil_metrics['Max Drawdown (%)']:.2f}%", f"{ml_metrics['Max Drawdown (%)']:.2f}%"]
                     }
                     
                     comp_df = pd.DataFrame(comp_data)

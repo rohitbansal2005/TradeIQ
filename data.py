@@ -15,6 +15,49 @@ TOP_STOCKS = [
     "BPCL.NS", "MARICO.NS", "SHREECEM.NS", "HEROMOTOCO.NS", "DIVISLAB.NS"
 ]
 
+NIFTY_100_EXTRA = [
+    "HAL.NS", "BEL.NS", "TRENT.NS", "TVSMOTOR.NS", "INDIGO.NS", "CHOLAFIN.NS",
+    "PNB.NS", "BANKBARODA.NS", "JINDALSTEL.NS", "CUMMINSIND.NS", "SIEMENS.NS",
+    "ABB.NS", "ZFCVINDIA.NS", "BOSCHLTD.NS", "PIDILITIND.NS", "HAVELLS.NS",
+    "POLYCAB.NS", "CGPOWER.NS", "LODHA.NS", "DLF.NS", "GODREJCP.NS", "DABUR.NS",
+    "COLPAL.NS", "PGHH.NS", "UBL.NS", "MCDOWELL-N.NS", "GAIL.NS", "IOC.NS",
+    "AMBUJACEM.NS", "SRF.NS", "PIIND.NS", "TORNTPHARM.NS", "ZYDUSLIFE.NS",
+    "LUPIN.NS", "AUROPHARMA.NS", "MUTHOOTFIN.NS", "SHRIRAMFIN.NS", "HDFCAMC.NS",
+    "ICICIPRULI.NS", "ICICIGI.NS", "SBICARD.NS", "RECLTD.NS", "PFC.NS",
+    "TATACOMM.NS", "INFOEDGE.NS", "FSNCREVICES.NS", "PAYTM.NS", "DMART.NS",
+    "MAXHEALTH.NS", "AUBANK.NS"
+]
+
+NIFTY_200_EXTRA = [
+    "ASHOKLEY.NS", "SAIL.NS", "BANDHANBNK.NS", "L&TFH.NS", "NMDC.NS", "BATAINDIA.NS",
+    "GMRINFRA.NS", "IDFCFIRSTB.NS", "M&MFIN.NS", "AARTIIND.NS", "ABCAPITAL.NS",
+    "AMARAJABAT.NS", "APOLLOTYRE.NS", "BALKRISIND.NS", "BANKINDIA.NS", "CANBK.NS",
+    "CHAMBLFERT.NS", "COROMANDEL.NS", "CUB.NS", "DEEPAKNTR.NS", "DIXON.NS",
+    "ESCORTS.NS", "EXIDEIND.NS", "GLENMARK.NS", "GUJGASLTD.NS", "IGL.NS",
+    "INDIACEM.NS", "INDHOTEL.NS", "IPCALAB.NS", "JKCEMENT.NS", "LALPATHLAB.NS",
+    "LICHSGFIN.NS", "MGL.NS", "MFSL.NS", "NATIONALUM.NS", "NAVINFLUOR.NS",
+    "OBEROIRLTY.NS", "PERSISTENT.NS", "PETRONET.NS", "RAMCOCEM.NS", "TATACHEM.NS",
+    "TATAPOWER.NS", "TORNTPOWER.NS", "TVSMOTOR.NS", "UPL.NS", "VOLTAS.NS"
+]
+
+MARKET_UNIVERSES = {
+    "Nifty 50": TOP_STOCKS,
+    "Nifty 100": TOP_STOCKS + NIFTY_100_EXTRA,
+    "Nifty 200": TOP_STOCKS + NIFTY_100_EXTRA + NIFTY_200_EXTRA,
+    "Nifty 500 (Top Liquid)": TOP_STOCKS + NIFTY_100_EXTRA + NIFTY_200_EXTRA + ["IDEA.NS", "YESBANK.NS", "BHEL.NS", "RVNL.NS", "IRFC.NS", "IREDA.NS", "SUZLON.NS", "JIOFIN.NS"]
+}
+
+@st.cache_data(ttl=86400) # Cache for 1 day
+def get_nifty_500_live():
+    """Dynamically fetches the official Nifty 500 list from NSE."""
+    try:
+        df = pd.read_csv('https://archives.nseindia.com/content/indices/ind_nifty500list.csv')
+        tickers = [str(sym) + ".NS" for sym in df['Symbol'].tolist()]
+        return tickers
+    except Exception as e:
+        # Fallback to the heavy static list if offline
+        return MARKET_UNIVERSES["Nifty 500 (Top Liquid)"]
+
 @st.cache_data(ttl=900)
 def fetch_data(stock="TCS.NS", period="1y", interval="1d"):
     """Fetch historical stock data using yfinance."""
@@ -52,7 +95,7 @@ def fetch_multiple_stocks(tickers, period="6mo", interval="1d"):
     # Grouping into a space-separated string for yfinance
     tickers_str = " ".join(tickers)
     # yfinance download with group_by="ticker" returns a MultiIndex DataFrame
-    df = yf.download(tickers_str, period=period, interval=interval, group_by="ticker")
+    df = yf.download(tickers_str, period=period, interval=interval, group_by="ticker", threads=True, progress=False)
     
     stock_data = {}
     for ticker in tickers:

@@ -12,7 +12,7 @@ def train_and_predict_ml(df, prob_threshold=0.60, live_only=False):
     data = df.copy()
     
     # Advanced Quant Features
-    required_features = ['Return_Z_Score', 'Velocity', 'Acceleration', 'OBV_Pct', 'Volatility', 'ADX']
+    required_features = ['Return_Z_Score', 'Velocity', 'Acceleration', 'OBV_Pct', 'Volatility', 'ADX', 'MFI', 'SMI', 'Coil_Squeeze']
     
     if isinstance(data.columns, pd.MultiIndex):
         close_col = data['Close'].iloc[:, 0]
