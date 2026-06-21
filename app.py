@@ -76,7 +76,7 @@ with tab1:
     if st.button("Analyze Single"):
         with st.spinner("Fetching data and analyzing..."):
             try:
-                df = fetch_data(stock, period="6mo", interval="1d")
+                df = fetch_data(stock, period="2y", interval="1d")
                 
                 if df.empty:
                     st.error("Could not fetch data for this ticker. Please check the ticker symbol.")
@@ -251,6 +251,6 @@ with tab3:
                     comp_df = pd.DataFrame(comp_data)
                     st.dataframe(comp_df, use_container_width=True)
                     
-                    st.info("Note: The Machine Learning strategy includes look-ahead bias in this simple demonstration because it trains on the whole dataset minus the last day. Real trading systems use walk-forward validation.")
+                    st.info("Note: The Machine Learning strategy uses Walk-Forward Validation. It trains on expanding windows of historical data, eliminating look-ahead bias to simulate realistic trading performance.")
             except Exception as e:
                 st.error(f"An error occurred during backtesting: {e}")
