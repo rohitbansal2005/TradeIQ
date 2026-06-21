@@ -4,7 +4,7 @@ from xgboost import XGBClassifier
 import warnings
 warnings.filterwarnings('ignore')
 
-def train_and_predict_ml(df, prob_threshold=0.60):
+def train_and_predict_ml(df, prob_threshold=0.60, live_only=False):
     """
     Trains an XGBoost model using expanding window walk-forward validation 
     to eliminate lookahead bias and provide authentic backtesting signals.
@@ -32,34 +32,34 @@ def train_and_predict_ml(df, prob_threshold=0.60):
     y = data['Target']
     
     signals = pd.Series("HOLD", index=df.index)
+    model = XGBClassifier(n_estimators=50, max_depth=3, learning_rate=0.05, random_state=42, eval_metric='logloss')
     
-    # Walk-forward validation (expanding window)
-    start_idx = 100
-    step = 20
-    
-    model = XGBClassifier(n_estimators=50, max_depth=3, learning_rate=0.05, random_state=42, use_label_encoder=False, eval_metric='logloss')
-    
-    for i in range(start_idx, len(X), step):
-        end_train = i
-        end_predict = min(i + step, len(X))
+    if not live_only:
+        # Walk-forward validation (expanding window)
+        start_idx = 100
+        step = 20
         
-        X_train = X.iloc[:end_train]
-        y_train = y.iloc[:end_train]
-        X_test = X.iloc[end_train:end_predict]
-        
-        if len(y_train.unique()) < 2:
-            continue
+        for i in range(start_idx, len(X), step):
+            end_train = i
+            end_predict = min(i + step, len(X))
             
-        model.fit(X_train, y_train)
-        probs = model.predict_proba(X_test)[:, 1] # Probability of Class 1 (BUY)
-        
-        test_dates = X.index[end_train:end_predict]
-        for j, date in enumerate(test_dates):
-            prob = probs[j]
-            if prob > prob_threshold:
-                signals.loc[date] = "BUY"
-            elif prob < (1 - prob_threshold):
-                signals.loc[date] = "SELL"
+            X_train = X.iloc[:end_train]
+            y_train = y.iloc[:end_train]
+            X_test = X.iloc[end_train:end_predict]
+            
+            if len(y_train.unique()) < 2:
+                continue
+                
+            model.fit(X_train, y_train)
+            probs = model.predict_proba(X_test)[:, 1] # Probability of Class 1 (BUY)
+            
+            test_dates = X.index[end_train:end_predict]
+            for j, date in enumerate(test_dates):
+                prob = probs[j]
+                if prob > prob_threshold:
+                    signals.loc[date] = "BUY"
+                elif prob < (1 - prob_threshold):
+                    signals.loc[date] = "SELL"
     
     # Live prediction (Latest)
     X_latest = df[required_features].ffill().bfill().iloc[-1:]

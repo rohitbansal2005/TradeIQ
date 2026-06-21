@@ -90,7 +90,7 @@ with tab1:
                     risk = get_risk_params()
                     
                     # Fetch XGBoost Prediction
-                    _, ml_latest_signal, ml_prob = train_and_predict_ml(df)
+                    _, ml_latest_signal, ml_prob = train_and_predict_ml(df, live_only=True)
                     
                     if isinstance(df.columns, pd.MultiIndex):
                         current_price = df['Close'].iloc[-1, 0]
@@ -147,7 +147,7 @@ with tab2:
                         try:
                             df = add_indicators(df)
                             signal = get_regime_signal(df, market_context).iloc[-1]
-                            _, ml_latest_signal, ml_prob = train_and_predict_ml(df)
+                            _, ml_latest_signal, ml_prob = train_and_predict_ml(df, live_only=True)
                             
                             current_atr = df['ATR'].iloc[-1]
                             current_adx = df['ADX'].iloc[-1]
