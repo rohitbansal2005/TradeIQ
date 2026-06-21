@@ -137,7 +137,7 @@ with tab2:
         with st.spinner("Fetching live data for all top stocks... this may take a moment."):
             try:
                 # Fetch multi-stocks
-                stock_data = fetch_multiple_stocks(TOP_STOCKS, period="6mo", interval="1d")
+                stock_data = fetch_multiple_stocks(TOP_STOCKS, period="2y", interval="1d")
                 
                 market_context = get_market_context()
                 results = []
