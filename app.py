@@ -234,6 +234,9 @@ with tab3:
                     st.subheader("Equity Curve (Portfolio Balance)")
                     if not regime_equity.empty:
                         st.line_chart(regime_equity.set_index("Date")["Equity"])
+                        min_date = regime_equity["Date"].min().strftime('%Y-%m-%d')
+                        max_date = regime_equity["Date"].max().strftime('%Y-%m-%d')
+                        st.caption(f"Chart Date Range: {min_date} to {max_date}")
                     
                     # Display Comparison
                     st.subheader("Strategy Comparison Metrics")

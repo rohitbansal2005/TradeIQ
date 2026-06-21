@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+import streamlit as st
 
 TOP_STOCKS = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
@@ -14,11 +15,13 @@ TOP_STOCKS = [
     "BPCL.NS", "MARICO.NS", "SHREECEM.NS", "HEROMOTOCO.NS", "DIVISLAB.NS"
 ]
 
+@st.cache_data(ttl=900)
 def fetch_data(stock="TCS.NS", period="1y", interval="1d"):
     """Fetch historical stock data using yfinance."""
     df = yf.download(stock, period=period, interval=interval, progress=False)
     return df
 
+@st.cache_data(ttl=900)
 def get_market_context(period="6mo", interval="1d"):
     """
     Fetches Nifty 50 (^NSEI) to determine the broader market trend.
@@ -40,6 +43,7 @@ def get_market_context(period="6mo", interval="1d"):
         return "Neutral"
 
 
+@st.cache_data(ttl=900)
 def fetch_multiple_stocks(tickers, period="6mo", interval="1d"):
     """
     Fetch data for multiple stocks efficiently. 
