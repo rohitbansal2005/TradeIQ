@@ -187,7 +187,7 @@ with tab2:
                         return ''
                     
                     # Apply styling
-                    styled_df = results_df.style.map(highlight_signals, subset=['Signal'])
+                    styled_df = results_df.style.map(highlight_signals, subset=['Regime Signal', 'XGBoost Signal'])
                     
                     st.dataframe(styled_df, width='stretch', height=600)
                     
