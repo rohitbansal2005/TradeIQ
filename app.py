@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
-from data import fetch_data, fetch_multiple_stocks, TOP_STOCKS
+from data import fetch_data, fetch_multiple_stocks, TOP_STOCKS, get_market_context
 from indicators import add_indicators
-from strategy import get_signal, get_risk_params
+from strategy import get_signal, get_risk_params, get_ema_rsi_signal, get_macd_signal, calculate_position_size, calculate_dynamic_risk, get_regime_signal
+from backtest import run_backtest
+from ml_model import train_and_predict_ml
 import yfinance as yf
 
 st.set_page_config(page_title="TradeIQ System", layout="wide")
@@ -54,7 +56,7 @@ with st.sidebar:
     Use the exact percentages provided by TradeIQ for that stock. Set your Stoploss trigger at -2% and your Target trigger at +4%. You are now protected automatically.
     """)
 
-tab1, tab2 = st.tabs(["Single Stock Analysis", "Multi-Stock Live Scanner"])
+tab1, tab2, tab3 = st.tabs(["Single Stock Analysis", "Multi-Stock Live Scanner", "Backtest & Strategy Compare"])
 
 with tab1:
     st.header("Single Stock Analysis")
@@ -65,6 +67,10 @@ with tab1:
     with col2:
         custom_stock = st.text_input("Or Enter Custom Ticker", placeholder="e.g. ZOMATO.NS")
         
+    market_context = get_market_context()
+    st.info(f"📈 **Broader Market Context (Nifty 50):** {market_context}")
+    
+    capital_input = st.number_input("Enter Capital for Position Sizing (₹)", value=100000, step=10000)
     stock = custom_stock.strip().upper() if custom_stock.strip() else stock_dropdown
     
     if st.button("Analyze Single"):
@@ -80,31 +86,45 @@ with tab1:
                     st.subheader("Recent Data")
                     st.dataframe(df.tail())
                     
-                    signal = get_signal(df)
+                    signal = get_regime_signal(df, market_context).iloc[-1]
                     risk = get_risk_params()
                     
-                    current_rsi = df['RSI'].iloc[-1]
-                    trend = "Bullish 📈" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "Bearish 📉"
-                    confidence = "High" if signal == "BUY" and current_rsi < 30 else "Medium" if signal != "HOLD" else "Low"
+                    # Fetch XGBoost Prediction
+                    _, ml_latest_signal, ml_prob = train_and_predict_ml(df)
+                    
+                    if isinstance(df.columns, pd.MultiIndex):
+                        current_price = df['Close'].iloc[-1, 0]
+                    else:
+                        current_price = df['Close'].iloc[-1]
+                        
+                    current_atr = df['ATR'].iloc[-1]
+                    current_adx = df['ADX'].iloc[-1]
+                    
+                    stoploss_price, target_price, sl_pct, target_pct = calculate_dynamic_risk(current_price, current_atr)
+                    shares_to_buy, adjusted_risk = calculate_position_size(capital_input, current_price, current_atr, ml_probability=ml_prob)
+                    
+                    regime = "Trending 📈" if current_adx > 25 else "Sideways ↕️"
                     
                     st.markdown("---")
-                    st.subheader("🏆 FINAL OUTPUT")
+                    st.subheader("🏆 INSTITUTIONAL OUTPUT")
                     
-                    st.markdown(f"**Stock:** {stock.replace('.NS', '')}")
-                    st.markdown(f"**Trend:** {trend}")
-                    st.markdown(f"**RSI:** {current_rsi:.2f}")
+                    col_r1, col_r2, col_r3 = st.columns(3)
+                    col_r1.metric("Stock Regime", regime)
+                    col_r2.metric("ATR Volatility", f"₹{current_atr:.2f}")
+                    col_r3.metric("XGBoost Win Prob", f"{ml_prob*100:.1f}%")
+                    
                     st.markdown("---")
                     
                     if signal == "BUY":
-                        st.success(f"**Signal:** {signal} ✅")
+                        st.success(f"**Regime Signal:** {signal} ✅ | **XGBoost Signal:** {ml_latest_signal}")
                     elif signal == "SELL":
-                        st.error(f"**Signal:** {signal} ❌")
+                        st.error(f"**Regime Signal:** {signal} ❌ | **XGBoost Signal:** {ml_latest_signal}")
                     else:
-                        st.warning(f"**Signal:** {signal} ⏸️")
+                        st.warning(f"**Regime Signal:** {signal} ⏸️ | **XGBoost Signal:** {ml_latest_signal}")
                         
-                    st.markdown(f"**Stoploss:** {risk['Stoploss']*100:.0f}%")
-                    st.markdown(f"**Target:** +{risk['Target']*100:.0f}%")
-                    st.markdown(f"**Confidence:** {confidence}")
+                    st.markdown(f"**Stoploss (1.5x ATR):** ₹{stoploss_price:.2f} (-{sl_pct:.2f}%)")
+                    st.markdown(f"**Target (3.0x ATR):** ₹{target_price:.2f} (+{target_pct:.2f}%)")
+                    st.markdown(f"**Suggested Quantity (Kelly Sizing):** {shares_to_buy} shares (Risking {adjusted_risk*100:.2f}% of Capital)")
                     
             except Exception as e:
                 st.error(f"An error occurred: {e}")
@@ -165,3 +185,60 @@ with tab2:
                     
             except Exception as e:
                 st.error(f"An error occurred during scanning: {e}")
+
+with tab3:
+    st.header("Backtest & Strategy Compare")
+    st.write("Test multiple strategies over historical data to see their mathematical edge.")
+    
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        bt_stock = st.selectbox("Select Stock to Backtest", TOP_STOCKS, index=1, key="bt_stock")
+    with col_b2:
+        bt_period = st.selectbox("Historical Period", ["1y", "2y", "5y", "max"], index=1)
+        
+    if st.button("Run Backtest 🧪"):
+        with st.spinner(f"Fetching {bt_period} data and running backtests..."):
+            try:
+                df_bt = fetch_data(bt_stock, period=bt_period, interval="1d")
+                
+                if df_bt.empty:
+                    st.error("No data found.")
+                else:
+                    df_bt = add_indicators(df_bt)
+                    
+                    # Get Signals
+                    market_ctx_bt = get_market_context()
+                    regime_signals = get_regime_signal(df_bt, market_ctx_bt)
+                    ema_signals = get_ema_rsi_signal(df_bt)
+                    macd_signals = get_macd_signal(df_bt)
+                    ml_signals, _, _ = train_and_predict_ml(df_bt)
+                    
+                    # Run Backtests
+                    regime_metrics, _, regime_equity = run_backtest(df_bt, regime_signals)
+                    ema_metrics, _, ema_equity = run_backtest(df_bt, ema_signals)
+                    macd_metrics, _, macd_equity = run_backtest(df_bt, macd_signals)
+                    ml_metrics, _, ml_equity = run_backtest(df_bt, ml_signals)
+                    
+                    st.subheader("Equity Curve (Portfolio Balance)")
+                    if not regime_equity.empty:
+                        st.line_chart(regime_equity.set_index("Date")["Equity"])
+                    
+                    # Display Comparison
+                    st.subheader("Strategy Comparison Metrics")
+                    
+                    comp_data = {
+                        "Strategy": ["Regime+Context (Pro)", "EMA + RSI (Trend)", "MACD (Momentum)", "Machine Learning"],
+                        "Total Trades": [regime_metrics["Total Trades"], ema_metrics["Total Trades"], macd_metrics["Total Trades"], ml_metrics["Total Trades"]],
+                        "Win Rate (%)": [f"{regime_metrics['Win Rate (%)']:.2f}%", f"{ema_metrics['Win Rate (%)']:.2f}%", f"{macd_metrics['Win Rate (%)']:.2f}%", f"{ml_metrics['Win Rate (%)']:.2f}%"],
+                        "Profit Factor": [f"{regime_metrics['Profit Factor']:.2f}", f"{ema_metrics['Profit Factor']:.2f}", f"{macd_metrics['Profit Factor']:.2f}", f"{ml_metrics['Profit Factor']:.2f}"],
+                        "Sharpe Ratio": [f"{regime_metrics['Sharpe Ratio']:.2f}", f"{ema_metrics['Sharpe Ratio']:.2f}", f"{macd_metrics['Sharpe Ratio']:.2f}", f"{ml_metrics['Sharpe Ratio']:.2f}"],
+                        "Total Return (%)": [f"{regime_metrics['Total Return (%)']:.2f}%", f"{ema_metrics['Total Return (%)']:.2f}%", f"{macd_metrics['Total Return (%)']:.2f}%", f"{ml_metrics['Total Return (%)']:.2f}%"],
+                        "Max Drawdown (%)": [f"{regime_metrics['Max Drawdown (%)']:.2f}%", f"{ema_metrics['Max Drawdown (%)']:.2f}%", f"{macd_metrics['Max Drawdown (%)']:.2f}%", f"{ml_metrics['Max Drawdown (%)']:.2f}%"]
+                    }
+                    
+                    comp_df = pd.DataFrame(comp_data)
+                    st.dataframe(comp_df, use_container_width=True)
+                    
+                    st.info("Note: The Machine Learning strategy includes look-ahead bias in this simple demonstration because it trains on the whole dataset minus the last day. Real trading systems use walk-forward validation.")
+            except Exception as e:
+                st.error(f"An error occurred during backtesting: {e}")

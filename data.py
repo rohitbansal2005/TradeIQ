@@ -16,8 +16,29 @@ TOP_STOCKS = [
 
 def fetch_data(stock="TCS.NS", period="1y", interval="1d"):
     """Fetch historical stock data using yfinance."""
-    df = yf.download(stock, period=period, interval=interval)
+    df = yf.download(stock, period=period, interval=interval, progress=False)
     return df
+
+def get_market_context(period="6mo", interval="1d"):
+    """
+    Fetches Nifty 50 (^NSEI) to determine the broader market trend.
+    Returns: 'Bullish' if Close > EMA50, else 'Bearish'
+    """
+    try:
+        nifty = yf.download("^NSEI", period=period, interval=interval, progress=False)
+        if nifty.empty:
+            return "Neutral"
+            
+        close_col = nifty['Close'].iloc[:, 0] if isinstance(nifty.columns, pd.MultiIndex) else nifty['Close']
+        ema50 = close_col.ewm(span=50, adjust=False).mean()
+        
+        last_close = close_col.iloc[-1]
+        last_ema = ema50.iloc[-1]
+        
+        return "Bullish" if last_close > last_ema else "Bearish"
+    except Exception:
+        return "Neutral"
+
 
 def fetch_multiple_stocks(tickers, period="6mo", interval="1d"):
     """

@@ -4,3 +4,5 @@ numpy
 matplotlib
 ta
 streamlit
+scikit-learn
+xgboost
