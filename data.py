@@ -98,19 +98,29 @@ def fetch_multiple_stocks(tickers, period="6mo", interval="1d"):
     df = yf.download(tickers_str, period=period, interval=interval, group_by="ticker", threads=True, progress=False)
     
     stock_data = {}
+    if df.empty:
+        return stock_data
+        
     for ticker in tickers:
-        # If multiple tickers are downloaded, df will have tickers as the top level of columns
         if isinstance(df.columns, pd.MultiIndex):
-            # Extract data for this specific ticker
-            # yfinance sometimes drops the top level if only one valid ticker was found, but here we expect multiple
-            if ticker in df.columns.levels[0]:
+            # yfinance sometimes puts Ticker at level 0, sometimes at level 1
+            if ticker in df.columns.get_level_values(0):
                 ticker_df = df[ticker].dropna()
                 if not ticker_df.empty:
                     stock_data[ticker] = ticker_df
+            elif ticker in df.columns.get_level_values(1):
+                ticker_df = df.xs(ticker, axis=1, level=1).dropna()
+                if not ticker_df.empty:
+                    stock_data[ticker] = ticker_df
         else:
-            # Fallback if somehow it's not a MultiIndex (e.g., only 1 ticker was passed)
-            stock_data[ticker] = df.dropna()
-            
+            # Fallback if only 1 valid ticker was returned and multi-index was dropped
+            # But we must ensure this df actually belongs to THIS ticker
+            # If yfinance returned a flat DF, it means only 1 ticker was requested or only 1 succeeded
+            # So we just assign it to that one successful ticker. We can just assign and break.
+            ticker_df = df.dropna()
+            if not ticker_df.empty:
+                stock_data[ticker] = ticker_df
+                
     return stock_data
 
 if __name__ == "__main__":

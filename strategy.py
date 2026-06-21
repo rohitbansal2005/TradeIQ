@@ -118,3 +118,30 @@ def calculate_position_size(capital, current_price, current_atr, ml_probability=
     
     return min(shares, max_shares), adjusted_risk
 
+def get_option_suggestion(current_price, signal):
+    """
+    Suggests the closest ATM option strike and type based on the signal.
+    """
+    if signal == "HOLD":
+        return "No Trade"
+        
+    # Determine Strike Step roughly based on Indian Market Price Levels
+    if current_price < 250:
+        step = 2.5
+    elif current_price < 1000:
+        step = 5
+    elif current_price < 3000:
+        step = 10
+    elif current_price < 10000:
+        step = 50
+    else:
+        step = 100
+        
+    strike = round(current_price / step) * step
+    
+    if signal == "BUY":
+        return f"Buy {int(strike) if strike == int(strike) else strike} CE"
+    elif signal == "SELL":
+        return f"Buy {int(strike) if strike == int(strike) else strike} PE"
+    
+    return "No Trade"

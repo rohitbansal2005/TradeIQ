@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from data import fetch_data, fetch_multiple_stocks, TOP_STOCKS, get_market_context, MARKET_UNIVERSES, get_nifty_500_live
 from indicators import add_indicators
-from strategy import get_signal, get_risk_params, get_ema_rsi_signal, get_macd_signal, calculate_position_size, calculate_dynamic_risk, get_regime_signal, get_coil_strategy_signal
+from strategy import get_signal, get_risk_params, get_ema_rsi_signal, get_macd_signal, calculate_position_size, calculate_dynamic_risk, get_regime_signal, get_coil_strategy_signal, get_option_suggestion
 from backtest import run_backtest
 from ml_model import train_and_predict_ml
 import yfinance as yf
@@ -112,14 +112,16 @@ with tab1:
                     shares_to_buy, adjusted_risk = calculate_position_size(capital_input, current_price, current_atr, ml_probability=ml_prob)
                     
                     regime = "Trending 📈" if current_adx > 25 else "Sideways ↕️"
+                    option_strategy = get_option_suggestion(current_price, ml_latest_signal)
                     
                     st.markdown("---")
                     st.subheader("🏆 INSTITUTIONAL OUTPUT")
                     
-                    col_r1, col_r2, col_r3 = st.columns(3)
+                    col_r1, col_r2, col_r3, col_r4 = st.columns(4)
                     col_r1.metric("Stock Regime", regime)
                     col_r2.metric("ATR Volatility", f"₹{current_atr:.2f}")
                     col_r3.metric("XGBoost Win Prob", f"{ml_prob*100:.1f}%")
+                    col_r4.metric("Option Suggestion", option_strategy, help="💡 System calculates the nearest Strike Price automatically. Note: Check your broker for the live option premium price.")
                     
                     st.markdown("---")
                     
@@ -173,7 +175,9 @@ with tab2:
                             
                         _, _, sl_pct, target_pct = calculate_dynamic_risk(current_price, current_atr)
                         
-                        regime = "Trending" if current_adx > 25 else "Sideways"
+                        option_strategy = get_option_suggestion(current_price, ml_latest_signal)
+                        
+                        regime = "Trending 📈" if current_adx > 25 else "Sideways ↕️"
                         
                         return {
                             "Stock": ticker.replace('.NS', ''),
@@ -181,10 +185,14 @@ with tab2:
                             "Regime Signal": signal,
                             "XGBoost Signal": ml_latest_signal,
                             "XGB Prob": f"{ml_prob*100:.1f}%",
+                            "Option Strategy": option_strategy,
                             "Stoploss": f"-{sl_pct:.2f}%",
                             "Target": f"+{target_pct:.2f}%"
                         }
-                    except Exception:
+                    except Exception as e:
+                        print(f"Exception in process_stock for {ticker}: {e}")
+                        import traceback
+                        traceback.print_exc()
                         return None
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
@@ -212,6 +220,7 @@ with tab2:
                     
                     st.dataframe(styled_df, width='stretch', height=600)
                     
+                    st.info("ℹ️ **Note on Option Strategy:** The suggested Strike Prices (e.g., 3500 CE) are mathematically calculated based on the live stock price. Please search for these exact contracts in your broker app to see their live premium cost.")
                     st.success("Scan complete! Look for the green BUY signals or red SELL signals.")
                 else:
                     st.warning("Could not fetch enough data for the stocks.")
