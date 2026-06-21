@@ -139,27 +139,39 @@ with tab2:
                 # Fetch multi-stocks
                 stock_data = fetch_multiple_stocks(TOP_STOCKS, period="6mo", interval="1d")
                 
+                market_context = get_market_context()
                 results = []
-                risk = get_risk_params()
                 
                 for ticker, df in stock_data.items():
                     if len(df) > 50: # Need enough data for EMA50
-                        df = add_indicators(df)
-                        signal = get_signal(df)
-                        
-                        current_rsi = df['RSI'].iloc[-1]
-                        trend = "Bullish" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "Bearish"
-                        confidence = "High" if signal == "BUY" and current_rsi < 30 else "Medium" if signal != "HOLD" else "Low"
-                        
-                        results.append({
-                            "Stock": ticker.replace('.NS', ''),
-                            "Trend": trend,
-                            "RSI": round(current_rsi, 2),
-                            "Signal": signal,
-                            "Confidence": confidence,
-                            "Stoploss": f"{risk['Stoploss']*100:.0f}%",
-                            "Target": f"+{risk['Target']*100:.0f}%"
-                        })
+                        try:
+                            df = add_indicators(df)
+                            signal = get_regime_signal(df, market_context).iloc[-1]
+                            _, ml_latest_signal, ml_prob = train_and_predict_ml(df)
+                            
+                            current_atr = df['ATR'].iloc[-1]
+                            current_adx = df['ADX'].iloc[-1]
+                            
+                            if isinstance(df.columns, pd.MultiIndex):
+                                current_price = df['Close'].iloc[-1, 0]
+                            else:
+                                current_price = df['Close'].iloc[-1]
+                                
+                            _, _, sl_pct, target_pct = calculate_dynamic_risk(current_price, current_atr)
+                            
+                            regime = "Trending" if current_adx > 25 else "Sideways"
+                            
+                            results.append({
+                                "Stock": ticker.replace('.NS', ''),
+                                "Regime": regime,
+                                "Regime Signal": signal,
+                                "XGBoost Signal": ml_latest_signal,
+                                "XGB Prob": f"{ml_prob*100:.1f}%",
+                                "Stoploss": f"-{sl_pct:.2f}%",
+                                "Target": f"+{target_pct:.2f}%"
+                            })
+                        except Exception:
+                            continue
                 
                 if results:
                     results_df = pd.DataFrame(results)
